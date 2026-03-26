@@ -10,6 +10,13 @@ export type BoardNodeData = {
   industryId?: string
   companyId?: string
   notes?: string
+  // Company taxonomy fields (controlled lists + tags).
+  sector?: import('./taxonomy').SectorValue
+  industry?: import('./taxonomy').IndustryValue
+  subIndustry?: string
+  layer?: import('./taxonomy').LayerValue
+  businessModel?: import('./taxonomy').BusinessModelValue
+  frontier?: import('./taxonomy').FrontierValue[]
   width: number
   height: number
 }
@@ -236,6 +243,12 @@ export function buildBoardGraph(
             industryId: industry.id,
             companyId: company.id,
             notes: company.notes,
+            sector: company.sector,
+            industry: company.industry,
+            subIndustry: company.subIndustry,
+            layer: company.layer,
+            businessModel: company.businessModel,
+            frontier: company.frontier,
             width: SIZES.company.width,
             height: SIZES.company.height,
           },

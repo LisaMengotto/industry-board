@@ -9,6 +9,13 @@ export type Company = {
   id: Id
   name: string
   notes: string
+  // Controlled taxonomy fields (used for consistent tagging and filtering).
+  sector?: import('./taxonomy').SectorValue
+  industry?: import('./taxonomy').IndustryValue
+  subIndustry?: string
+  layer?: import('./taxonomy').LayerValue
+  businessModel?: import('./taxonomy').BusinessModelValue
+  frontier?: import('./taxonomy').FrontierValue[]
   createdAt: number
 }
 
@@ -27,7 +34,7 @@ export type Sector = {
 }
 
 export type BoardData = {
-  version: 1
+  version: 2
   sectors: Sector[]
   layout: LayoutMap
 }

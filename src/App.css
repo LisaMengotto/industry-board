@@ -336,6 +336,12 @@
   resize: vertical;
 }
 
+.field__help {
+  font-size: 11px;
+  color: rgba(107, 99, 117, 0.85);
+  line-height: 1.25;
+}
+
 .btn {
   border-radius: 12px;
   border: 1px solid rgba(170, 59, 255, 0.3);
@@ -577,6 +583,13 @@
 
 .companyFocusCard__notes--muted {
   color: rgba(107, 99, 117, 0.8);
+}
+
+.companyFocusCard__taxonomy {
+  margin-top: 8px;
+  font-size: 12px;
+  color: rgba(107, 99, 117, 0.95);
+  white-space: pre-wrap;
 }
 
 .companyList {

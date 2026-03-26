@@ -4,6 +4,7 @@ import { loadBoardData, saveBoardData, clearBoardData } from './lib/storage'
 import { newId } from './lib/uid'
 import { buildBoardGraph, ensureLayoutForSectors } from './lib/boardGraph'
 import { nodeId } from './lib/types'
+import type { CompanyTaxonomy } from './lib/taxonomy'
 import type { SelectedEntityInfo } from './components/board/BoardSelectionContext'
 import Whiteboard from './components/board/Whiteboard'
 import ManagePanel from './components/board/ManagePanel'
@@ -151,8 +152,8 @@ export default function App() {
     )
   }
 
-  function addCompany(industryIdValue: string, name: string, notes: string) {
-    const company: Company = { id: newId(), name, notes, createdAt: Date.now() }
+  function addCompany(industryIdValue: string, name: string, notes: string, taxonomy: CompanyTaxonomy) {
+    const company: Company = { id: newId(), name, notes, createdAt: Date.now(), ...taxonomy }
     setBoardData((prev) =>
       ensureLayoutState({
         ...prev,

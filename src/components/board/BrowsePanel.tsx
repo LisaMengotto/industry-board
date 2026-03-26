@@ -204,6 +204,23 @@ export default function BrowsePanel({
                           No notes. Use `Manage data` to add research notes.
                         </div>
                       )}
+                      {(() => {
+                        const frontierSummary =
+                          selectedCompany.frontier && selectedCompany.frontier.length > 0
+                            ? `Frontier: ${selectedCompany.frontier.join(', ')}`
+                            : ''
+                        const parts = [
+                          selectedCompany.sector ? `Sector: ${selectedCompany.sector}` : '',
+                          selectedCompany.industry ? `Industry: ${selectedCompany.industry}` : '',
+                          selectedCompany.subIndustry ? `Sub-industry: ${selectedCompany.subIndustry}` : '',
+                          selectedCompany.layer ? `Layer: ${selectedCompany.layer}` : '',
+                          selectedCompany.businessModel ? `Business model: ${selectedCompany.businessModel}` : '',
+                          frontierSummary,
+                        ].filter(Boolean)
+
+                        if (parts.length === 0) return null
+                        return <div className="companyFocusCard__taxonomy">{parts.join(' • ')}</div>
+                      })()}
                     </div>
                   ) : null}
 
