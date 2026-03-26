@@ -1,112 +1,147 @@
-import type { BoardData } from './types'
-import { inferTaxonomyFromText, mapBoardIndustryNameToIndustryValue, mapBoardSectorNameToSectorValue } from './taxonomy'
+import type { BoardData, Company } from './types'
+import { inferTaxonomyFromText } from './taxonomy'
 
 const STORAGE_KEY = 'industryBoard.v1'
 
-type CompanyV1 = {
-  id: string
-  name: string
-  notes: string
-  createdAt: number
+type OldCompany = {
+  id?: unknown
+  name?: unknown
+  notes?: unknown
+  createdAt?: unknown
+  // Old controlled taxonomy fields.
+  sector?: unknown
+  industry?: unknown
+  subIndustry?: unknown
+  layer?: unknown
+  businessModel?: unknown
+  frontier?: unknown
 }
 
-type IndustryV1 = {
-  id: string
-  name: string
-  companies: CompanyV1[]
-  createdAt: number
+type OldIndustry = {
+  id?: unknown
+  name?: unknown
+  companies?: unknown
+  createdAt?: unknown
 }
 
-type SectorV1 = {
-  id: string
-  name: string
-  industries: IndustryV1[]
-  createdAt: number
+type OldSector = {
+  id?: unknown
+  name?: unknown
+  industries?: unknown
+  createdAt?: unknown
 }
 
-type BoardDataV1 = {
-  version: 1
-  sectors: SectorV1[]
-  layout: Record<string, { x: number; y: number }>
+type OldBoardShape = {
+  version?: unknown
+  sectors?: unknown
+  companies?: unknown
+  tags?: unknown
+  layout?: unknown
 }
 
 export function loadBoardData(): BoardData {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { version: 2, sectors: [], layout: {} }
-    const parsed: Partial<BoardData> & { version?: unknown; sectors?: unknown; layout?: unknown } = JSON.parse(raw)
+    if (!raw) return { version: 3, companies: [], tags: [], layout: {} }
 
-    if (parsed?.version === 2) {
+    const parsed = JSON.parse(raw) as OldBoardShape
+
+    if (parsed?.version === 3 && Array.isArray(parsed.companies)) {
       return {
-        version: 2,
-        sectors: Array.isArray(parsed.sectors) ? (parsed.sectors as BoardData['sectors']) : [],
+        version: 3,
+        companies: parsed.companies as Company[],
+        tags: Array.isArray(parsed.tags) ? (parsed.tags as string[]) : [],
         layout: parsed.layout && typeof parsed.layout === 'object' ? (parsed.layout as BoardData['layout']) : {},
       }
     }
 
-    if (parsed?.version === 1) {
-      const v1 = parsed as unknown as BoardDataV1
+    // Migration from old taxonomy-based board formats.
+    const oldSectors: OldSector[] = Array.isArray(parsed.sectors) ? (parsed.sectors as OldSector[]) : []
 
-      const sectors = Array.isArray(v1.sectors)
-        ? v1.sectors.map((s) => {
-            const industries = Array.isArray(s?.industries)
-              ? s.industries.map((i) => {
-                  const companies = Array.isArray(i?.companies)
-                    ? i.companies.map((c) => {
-                        const notes = typeof c.notes === 'string' ? c.notes : ''
-                        const inferred = inferTaxonomyFromText({
-                          text: notes,
-                          parentIndustryName: i?.name,
-                        })
+    const companies: Company[] = []
+    const tagsByKey = new Map<string, string>()
 
-                        const sector = mapBoardSectorNameToSectorValue(s?.name)
-                        const industry = mapBoardIndustryNameToIndustryValue(i?.name)
+    function normalizeTagKey(tag: string) {
+      return tag.trim().toLowerCase().replace(/\s+/g, ' ')
+    }
 
-                        const frontier = inferred.frontier && inferred.frontier.length > 0 ? inferred.frontier : undefined
+    function maybeAddTag(tags: string[], rawTag: unknown) {
+      if (typeof rawTag !== 'string') return
+      const tag = rawTag.trim()
+      if (!tag) return
+      const key = normalizeTagKey(tag)
+      if (!key) return
+      // De-dupe but preserve the first-seen casing.
+      if (!tagsByKey.has(key)) tagsByKey.set(key, tag)
+      if (!tags.includes(tagsByKey.get(key)!)) tags.push(tagsByKey.get(key)!)
+    }
 
-                        return {
-                          id: String(c?.id ?? ''),
-                          name: typeof c?.name === 'string' ? c.name : '',
-                          notes,
-                          createdAt: typeof c?.createdAt === 'number' ? c.createdAt : Date.now(),
-                          sector,
-                          industry,
-                          subIndustry: '',
-                          layer: inferred.layer,
-                          businessModel: inferred.businessModel,
-                          frontier,
-                        }
-                      })
-                    : []
+    function maybeAddFrontierTags(tags: string[], rawFrontier: unknown) {
+      if (!Array.isArray(rawFrontier)) return
+      for (const f of rawFrontier) maybeAddTag(tags, f)
+    }
 
-                  return {
-                    id: String(i?.id ?? ''),
-                    name: typeof i?.name === 'string' ? i.name : '',
-                    companies,
-                    createdAt: typeof i?.createdAt === 'number' ? i.createdAt : Date.now(),
-                  }
-                })
-              : []
+    for (const sector of oldSectors) {
+      const sectorIndustries: OldIndustry[] = Array.isArray(sector?.industries) ? (sector.industries as OldIndustry[]) : []
+      for (const industry of sectorIndustries) {
+        const industryName = typeof industry?.name === 'string' ? industry.name : undefined
+        const oldCompanies: OldCompany[] = Array.isArray(industry?.companies) ? (industry.companies as OldCompany[]) : []
 
-            return {
-              id: String(s?.id ?? ''),
-              name: typeof s?.name === 'string' ? s.name : '',
-              industries,
-              createdAt: typeof s?.createdAt === 'number' ? s.createdAt : Date.now(),
-            }
-          })
-        : []
+        for (const oldC of oldCompanies) {
+          const id = String(oldC?.id ?? '')
+          if (!id) continue
+          const name = typeof oldC?.name === 'string' ? oldC.name : ''
+          const createdAt = typeof oldC?.createdAt === 'number' ? oldC.createdAt : Date.now()
 
-      return {
-        version: 2,
-        sectors,
-        layout: v1.layout && typeof v1.layout === 'object' ? (v1.layout as BoardData['layout']) : {},
+          const notes = typeof oldC?.notes === 'string' ? oldC.notes : undefined
+          const maybeExtras = oldC as OldCompany & { description?: unknown; website?: unknown }
+          const description = typeof maybeExtras.description === 'string' ? maybeExtras.description : undefined
+          const website = typeof maybeExtras.website === 'string' ? maybeExtras.website : undefined
+
+          const tags: string[] = []
+          maybeAddTag(tags, oldC?.sector)
+          maybeAddTag(tags, oldC?.industry)
+          maybeAddTag(tags, oldC?.subIndustry)
+          maybeAddTag(tags, oldC?.layer)
+          maybeAddTag(tags, oldC?.businessModel)
+          maybeAddFrontierTags(tags, oldC?.frontier)
+
+          // Best-effort extra conversion from notes.
+          if (notes && (notes.trim().length > 0 || industryName)) {
+            const inferred = inferTaxonomyFromText({
+              text: notes ?? '',
+              parentIndustryName: industryName,
+            })
+            if (inferred.layer) maybeAddTag(tags, inferred.layer)
+            if (inferred.businessModel) maybeAddTag(tags, inferred.businessModel)
+            if (inferred.frontier) maybeAddFrontierTags(tags, inferred.frontier)
+          }
+
+          const company: Company = {
+            id,
+            name,
+            tags,
+            description,
+            notes: typeof notes === 'string' && notes.trim() ? notes : undefined,
+            website,
+            createdAt,
+          }
+
+          companies.push(company)
+        }
       }
     }
 
-    return { version: 2, sectors: [], layout: {} }
+    const allTags = Array.from(tagsByKey.values())
+
+    return {
+      version: 3,
+      companies,
+      tags: allTags,
+      layout: parsed.layout && typeof parsed.layout === 'object' ? (parsed.layout as BoardData['layout']) : {},
+    }
   } catch {
-    return { version: 2, sectors: [], layout: {} }
+    return { version: 3, companies: [], tags: [], layout: {} }
   }
 }
 

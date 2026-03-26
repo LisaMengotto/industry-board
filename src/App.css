@@ -615,6 +615,62 @@
   background: rgba(170, 59, 255, 0.1);
 }
 
+.tagEditor__inputRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.tagEditor__chips {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tagEditor__muted {
+  font-size: 12px;
+  color: rgba(107, 99, 117, 0.92);
+}
+
+.tagEditor__help {
+  margin-top: 6px;
+  font-size: 11px;
+  color: rgba(107, 99, 117, 0.85);
+}
+
+.tagChip {
+  border-radius: 999px;
+  border: 1px solid var(--border, rgba(229, 228, 231, 1));
+  background: rgba(255, 255, 255, 0.65);
+  padding: 6px 10px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.tagChip__label {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: var(--text-h, #08060d);
+  line-height: 1;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tagChip__remove {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 900;
+  color: rgba(107, 99, 117, 0.85);
+  padding: 0;
+}
+
 .appCanvas {
   flex: 1 1 auto;
   min-width: 0;

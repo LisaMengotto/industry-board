@@ -1,256 +1,213 @@
-import { useEffect, useMemo } from 'react'
-import type { Sector } from '../../lib/types'
-
-export type BrowseStep = 0 | 1 | 2
+import { useMemo, useState } from 'react'
+import type { Company } from '../../lib/types'
+import { computeCompanySimilarity, getRelatedCompanies } from '../../lib/related'
 
 export type BrowsePanelProps = {
-  sectors: Sector[]
-  browseStep: BrowseStep
-  selectedSectorId: string | null
-  selectedIndustryId: string | null
+  companies: Company[]
+  tags: string[]
   selectedCompanyId: string | null
   autoFocusOnSelect: boolean
   onSetAutoFocusOnSelect: (value: boolean) => void
-  onSelectSectorId: (sectorId: string) => void
-  onSelectIndustryId: (industryId: string) => void
   onSelectCompanyId: (companyId: string) => void
-  onSetBrowseStep: (step: BrowseStep) => void
+}
+
+function overlapCount(a: string[], b: string[]) {
+  if (!a?.length || !b?.length) return 0
+  const keys = new Set(a.map((t) => t.trim().toLowerCase()))
+  let count = 0
+  for (const t of b) if (keys.has(t.trim().toLowerCase())) count++
+  return count
 }
 
 export default function BrowsePanel({
-  sectors,
-  browseStep,
-  selectedSectorId,
-  selectedIndustryId,
+  companies,
+  tags,
   selectedCompanyId,
   autoFocusOnSelect,
   onSetAutoFocusOnSelect,
-  onSelectSectorId,
-  onSelectIndustryId,
   onSelectCompanyId,
-  onSetBrowseStep,
 }: BrowsePanelProps) {
-  const selectedSector = useMemo(() => sectors.find((s) => s.id === selectedSectorId) ?? null, [sectors, selectedSectorId])
-  const industries = selectedSector?.industries ?? []
-  const selectedIndustry = useMemo(
-    () => industries.find((i) => i.id === selectedIndustryId) ?? null,
-    [industries, selectedIndustryId]
+  const [selectedTags, setSelectedTags] = useState<string[]>([])
+  const [sortMode, setSortMode] = useState<'sharedTags' | 'name'>('sharedTags')
+
+  const selectedCompany = useMemo(
+    () => (selectedCompanyId ? companies.find((c) => c.id === selectedCompanyId) ?? null : null),
+    [companies, selectedCompanyId]
   )
-  const companies = selectedIndustry?.companies ?? []
 
-  useEffect(() => {
-    if (browseStep !== 0) return
-    if (sectors.length === 0) return
-    if (!selectedSectorId) onSelectSectorId(sectors[0]!.id)
-  }, [browseStep, sectors, selectedSectorId, onSelectSectorId])
+  const matching = useMemo(() => {
+    if (companies.length === 0) return []
+    const filterTags = selectedTags
 
-  useEffect(() => {
-    if (browseStep !== 1) return
-    if (!selectedSector) return
-    if (industries.length === 0) return
-    if (!selectedIndustryId || !industries.some((i) => i.id === selectedIndustryId)) {
-      onSelectIndustryId(industries[0]!.id)
-    }
-  }, [browseStep, selectedSector, industries, selectedIndustryId, onSelectIndustryId])
+    const list = companies
+      .map((c) => {
+        const shared = overlapCount(c.tags, filterTags)
+        return { c, shared }
+      })
+      .filter(({ shared }) => (filterTags.length > 0 ? shared > 0 : true))
 
-  useEffect(() => {
-    if (browseStep !== 2) return
-    if (!selectedIndustry) return
-    if (companies.length === 0) return
-    if (!selectedCompanyId || !companies.some((c) => c.id === selectedCompanyId)) {
-      onSelectCompanyId(companies[0]!.id)
-    }
-  }, [browseStep, selectedIndustry, companies, selectedCompanyId, onSelectCompanyId])
+    list.sort((a, b) => {
+      if (sortMode === 'name') return a.c.name.localeCompare(b.c.name)
+      // sharedTags
+      if (b.shared !== a.shared) return b.shared - a.shared
+      // tie-break with semantic similarity to selected company if we have one
+      if (selectedCompany) {
+        const simA = computeCompanySimilarity(selectedCompany, a.c)
+        const simB = computeCompanySimilarity(selectedCompany, b.c)
+        if (simB.tagOverlapCount !== simA.tagOverlapCount) return simB.tagOverlapCount - simA.tagOverlapCount
+        return simB.score - simA.score
+      }
+      return a.c.name.localeCompare(b.c.name)
+    })
 
-  const selectedCompanyIndex = useMemo(() => {
-    if (!selectedCompanyId) return 0
-    const idx = companies.findIndex((c) => c.id === selectedCompanyId)
-    return idx === -1 ? 0 : idx
+    return list.map((x) => x.c)
+  }, [companies, selectedTags, sortMode, selectedCompany])
+
+  const similar = useMemo(() => {
+    if (!selectedCompanyId) return []
+    return getRelatedCompanies({ companies, companyId: selectedCompanyId, maxResults: 8 })
   }, [companies, selectedCompanyId])
-
-  const selectedCompany = companies[selectedCompanyIndex] ?? null
-
-  const canNextFromSector = !!selectedSectorId
-  const canNextFromIndustry = !!selectedIndustryId && industries.length > 0
 
   return (
     <div className="sidePanel">
       <div className="sidePanel__header">
-        <h2 className="sidePanel__title">Guided browse</h2>
-        <p className="sidePanel__subtitle">Follow the sector to industry to company path and focus nodes on the board.</p>
+        <h2 className="sidePanel__title">Explore tags</h2>
+        <p className="sidePanel__subtitle">Filter, sort, and find related companies via shared tags + similarity.</p>
       </div>
 
-      <div className="browseSteps" aria-label="Browse progress">
-        <div className={`browseStep ${browseStep === 0 ? 'browseStep--active' : ''}`}>1. Sector</div>
-        <div className={`browseStep ${browseStep === 1 ? 'browseStep--active' : ''}`}>2. Industry</div>
-        <div className={`browseStep ${browseStep === 2 ? 'browseStep--active' : ''}`}>3. Company</div>
+      <div className="sidePanel__section">
+        <label className="checkRow">
+          <input
+            type="checkbox"
+            checked={autoFocusOnSelect}
+            onChange={(e) => onSetAutoFocusOnSelect(e.target.checked)}
+          />
+          Auto-focus selection on the board
+        </label>
       </div>
 
-      <label className="checkRow">
-        <input
-          type="checkbox"
-          checked={autoFocusOnSelect}
-          onChange={(e) => onSetAutoFocusOnSelect(e.target.checked)}
-        />
-        Auto-focus selection on the board
-      </label>
-
-      {sectors.length === 0 ? <div className="emptyState">No sectors yet. Switch to `Manage data` to add some.</div> : null}
-
-      {browseStep === 0 ? (
-        <div className="sidePanel__section">
-          <label className="field">
-            <span className="field__label">Choose a sector</span>
-            <select
-              className="field__input"
-              value={selectedSectorId ?? ''}
-              onChange={(e) => onSelectSectorId(e.target.value)}
-            >
-              {sectors.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="buttonRow">
-            <button className="btn" type="button" disabled={!canNextFromSector} onClick={() => onSetBrowseStep(1)}>
-              Next: Industries
-            </button>
-          </div>
+      <div className="sidePanel__section">
+        <div className="sidePanel__listHeader">
+          <div className="sidePanel__listTitle">Filter by tags</div>
+          <div className="sidePanel__muted">{selectedTags.length > 0 ? `${selectedTags.length} selected` : 'No filter'}</div>
         </div>
-      ) : null}
 
-      {browseStep === 1 ? (
-        <div className="sidePanel__section">
-          {selectedSector ? (
-            <label className="field">
-              <span className="field__label">Choose an industry (in {selectedSector.name})</span>
-              <select
-                className="field__input"
-                value={selectedIndustryId ?? ''}
-                onChange={(e) => onSelectIndustryId(e.target.value)}
-                disabled={industries.length === 0}
-              >
-                {industries.map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : (
-            <div className="emptyState">Pick a sector first.</div>
-          )}
+        {tags.length === 0 ? <div className="emptyState">No tags yet.</div> : null}
 
-          {industries.length === 0 ? <div className="emptyState">This sector has no industries yet.</div> : null}
-
-          <div className="buttonRow">
-            <button className="btn btn--secondary" type="button" onClick={() => onSetBrowseStep(0)}>
-              Back
-            </button>
-            <button
-              className="btn"
-              type="button"
-              disabled={!canNextFromIndustry}
-              onClick={() => onSetBrowseStep(2)}
-            >
-              Next: Companies
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {browseStep === 2 ? (
-        <div className="sidePanel__section">
-          {selectedIndustry ? (
-            <>
-              <div className="browseIndustryHeader">
-                <div className="browseIndustryHeader__title">{selectedIndustry.name}</div>
-                <div className="browseIndustryHeader__meta">{companies.length} companies</div>
+        {tags.length > 0 ? (
+          <>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'space-between' }}>
+                <select
+                  className="field__input"
+                  value={sortMode}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    if (v === 'sharedTags' || v === 'name') setSortMode(v)
+                  }}
+                >
+                  <option value="sharedTags">Sort by shared tags</option>
+                  <option value="name">Sort by name</option>
+                </select>
+                <button className="btn btn--secondary" type="button" onClick={() => setSelectedTags([])}>
+                  Clear
+                </button>
               </div>
 
-              {companies.length === 0 ? <div className="emptyState">This industry has no companies yet.</div> : null}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {tags
+                  .slice()
+                  .sort((a, b) => a.localeCompare(b))
+                  .map((t) => {
+                    const active = selectedTags.some((x) => x.trim().toLowerCase() === t.trim().toLowerCase())
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        className={`companyChip ${active ? 'companyChip--active' : ''}`}
+                        onClick={() => {
+                          setSelectedTags((prev) => {
+                            const key = t.trim().toLowerCase()
+                            const already = prev.some((x) => x.trim().toLowerCase() === key)
+                            if (already) return prev.filter((x) => x.trim().toLowerCase() !== key)
+                            return [...prev, t]
+                          })
+                        }}
+                      >
+                        {t}
+                      </button>
+                    )
+                  })}
+              </div>
+            </div>
+          </>
+        ) : null}
+      </div>
 
-              {companies.length > 0 ? (
-                <>
-                  <div className="buttonRow">
-                    <button
-                      className="btn btn--secondary"
-                      type="button"
-                      onClick={() => onSelectCompanyId(companies[Math.max(0, selectedCompanyIndex - 1)]!.id)}
-                      disabled={selectedCompanyIndex <= 0}
-                    >
-                      Prev company
-                    </button>
-                    <button
-                      className="btn"
-                      type="button"
-                      onClick={() => onSelectCompanyId(companies[Math.min(companies.length - 1, selectedCompanyIndex + 1)]!.id)}
-                      disabled={selectedCompanyIndex >= companies.length - 1}
-                    >
-                      Next company
-                    </button>
-                  </div>
+      <div className="sidePanel__section">
+        <div className="sidePanel__listHeader">
+          <div className="sidePanel__listTitle">Matching companies</div>
+          <div className="sidePanel__muted">{matching.length} results</div>
+        </div>
 
-                  {selectedCompany ? (
-                    <div className="companyFocusCard">
-                      <div className="companyFocusCard__name">{selectedCompany.name}</div>
-                      {selectedCompany.notes ? (
-                        <div className="companyFocusCard__notes">{selectedCompany.notes}</div>
-                      ) : (
-                        <div className="companyFocusCard__notes companyFocusCard__notes--muted">
-                          No notes. Use `Manage data` to add research notes.
-                        </div>
-                      )}
-                      {(() => {
-                        const frontierSummary =
-                          selectedCompany.frontier && selectedCompany.frontier.length > 0
-                            ? `Frontier: ${selectedCompany.frontier.join(', ')}`
-                            : ''
-                        const parts = [
-                          selectedCompany.sector ? `Sector: ${selectedCompany.sector}` : '',
-                          selectedCompany.industry ? `Industry: ${selectedCompany.industry}` : '',
-                          selectedCompany.subIndustry ? `Sub-industry: ${selectedCompany.subIndustry}` : '',
-                          selectedCompany.layer ? `Layer: ${selectedCompany.layer}` : '',
-                          selectedCompany.businessModel ? `Business model: ${selectedCompany.businessModel}` : '',
-                          frontierSummary,
-                        ].filter(Boolean)
-
-                        if (parts.length === 0) return null
-                        return <div className="companyFocusCard__taxonomy">{parts.join(' • ')}</div>
-                      })()}
-                    </div>
-                  ) : null}
-
-                  <div className="companyList">
-                    {companies.map((c) => {
-                      const isActive = c.id === selectedCompanyId
-                      return (
-                        <button
-                          key={c.id}
-                          className={`companyChip ${isActive ? 'companyChip--active' : ''}`}
-                          type="button"
-                          onClick={() => onSelectCompanyId(c.id)}
-                        >
-                          {c.name}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </>
-              ) : null}
-            </>
-          ) : (
-            <div className="emptyState">Pick an industry first.</div>
-          )}
-
-          <div className="buttonRow">
-            <button className="btn btn--secondary" type="button" onClick={() => onSetBrowseStep(1)}>
-              Back
-            </button>
+        {matching.length === 0 ? (
+          <div className="emptyState">No companies match the current tag filter.</div>
+        ) : (
+          <div className="companiesList">
+            {matching.slice(0, 30).map((c) => {
+              const shared = selectedTags.length > 0 ? overlapCount(c.tags, selectedTags) : 0
+              const isActive = c.id === selectedCompanyId
+              return (
+                <div key={c.id} className="companyRow">
+                  <button
+                    className={`companyRow__name ${isActive ? 'companyRow__name--active' : ''}`}
+                    type="button"
+                    onClick={() => onSelectCompanyId(c.id)}
+                    title={c.name}
+                  >
+                    {c.name}
+                    {selectedTags.length > 0 ? <span style={{ marginLeft: 8, opacity: 0.7 }}>({shared} shared)</span> : null}
+                  </button>
+                </div>
+              )
+            })}
           </div>
+        )}
+      </div>
+
+      {selectedCompany ? (
+        <div className="sidePanel__section">
+          <div className="sidePanel__listHeader">
+            <div className="sidePanel__listTitle">Similar companies</div>
+            <div className="sidePanel__muted">Top tag/text matches</div>
+          </div>
+
+          {similar.length === 0 ? (
+            <div className="emptyState">No similar companies found.</div>
+          ) : (
+            <div className="companiesList">
+              {similar.map((c) => {
+                const sim = computeCompanySimilarity(selectedCompany, c)
+                return (
+                  <div key={c.id} className="companyRow">
+                    <button
+                      className="companyRow__name"
+                      type="button"
+                      onClick={() => onSelectCompanyId(c.id)}
+                      title={c.name}
+                    >
+                      {c.name}
+                      {sim.tagOverlapCount > 0 ? (
+                        <span style={{ marginLeft: 8, opacity: 0.7 }}>
+                          ({sim.tagOverlapCount} shared)
+                        </span>
+                      ) : null}
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       ) : null}
     </div>

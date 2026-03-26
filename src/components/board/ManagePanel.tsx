@@ -1,98 +1,149 @@
 import { useMemo, useState } from 'react'
-import type { Industry, Sector } from '../../lib/types'
-import { nodeId } from '../../lib/types'
-import type { SelectedEntityInfo } from './BoardSelectionContext'
-import {
-  BUSINESS_MODEL_VALUES,
-  FRONTIER_VALUES,
-  INDUSTRY_VALUES,
-  LAYER_VALUES,
-  SECTOR_VALUES,
-  getFieldHelp,
-  mapBoardIndustryNameToIndustryValue,
-  mapBoardSectorNameToSectorValue,
-  type BusinessModelValue,
-  type CompanyTaxonomy,
-  type FrontierValue,
-  type IndustryValue,
-  type LayerValue,
-  type SectorValue,
-} from '../../lib/taxonomy'
+import type { Company } from '../../lib/types'
+import TagEditor from './TagEditor'
 
 export type ManagePanelProps = {
-  sectors: Sector[]
-  onSelectNode: (info: SelectedEntityInfo) => void
-  onAddSector: (name: string) => void
-  onAddIndustry: (sectorId: string, name: string) => void
-  onAddCompany: (industryId: string, name: string, notes: string, taxonomy: CompanyTaxonomy) => void
-  onDeleteSector: (sectorId: string) => void
-  onDeleteIndustry: (industryId: string) => void
+  companies: Company[]
+  tags: string[]
+  selectedCompanyId: string | null
+  onSelectCompanyId: (companyId: string) => void
+  onAddTag: (tag: string) => void
+  onAddCompany: (input: { name: string; tags: string[]; description?: string; notes?: string; website?: string }) => void
+  onUpdateCompany: (
+    companyId: string,
+    patch: { name?: string; tags?: string[]; description?: string; notes?: string; website?: string }
+  ) => void
   onDeleteCompany: (companyId: string) => void
 }
 
+function EditCompanyForm({
+  company,
+  tags,
+  onUpdateCompany,
+  onDeleteCompany,
+}: {
+  company: Company
+  tags: string[]
+  onUpdateCompany: ManagePanelProps['onUpdateCompany']
+  onDeleteCompany: ManagePanelProps['onDeleteCompany']
+}) {
+  const [editName, setEditName] = useState(company.name)
+  const [editTags, setEditTags] = useState<string[]>(company.tags ?? [])
+  const [editDescription, setEditDescription] = useState(company.description ?? '')
+  const [editNotes, setEditNotes] = useState(company.notes ?? '')
+  const [editWebsite, setEditWebsite] = useState(company.website ?? '')
+
+  return (
+    <div className="sidePanel__section">
+      <div className="formCard__title">Edit Selected Company</div>
+
+      <div className="formCard">
+        <label className="field">
+          <span className="field__label">Company name</span>
+          <input className="field__input" value={editName} onChange={(e) => setEditName(e.target.value)} />
+        </label>
+
+        <label className="field">
+          <span className="field__label">Tags</span>
+          <TagEditor
+            value={editTags}
+            availableTags={tags}
+            onChange={setEditTags}
+            placeholder="Add/remove tags"
+            suggestionsLabel={`${tags.length} total`}
+          />
+        </label>
+
+        <label className="field">
+          <span className="field__label">Description (optional)</span>
+          <textarea
+            className="field__input field__textarea"
+            value={editDescription}
+            onChange={(e) => setEditDescription(e.target.value)}
+            rows={3}
+          />
+        </label>
+
+        <label className="field">
+          <span className="field__label">Notes (optional)</span>
+          <textarea
+            className="field__input field__textarea"
+            value={editNotes}
+            onChange={(e) => setEditNotes(e.target.value)}
+            rows={3}
+          />
+        </label>
+
+        <label className="field">
+          <span className="field__label">Website (optional)</span>
+          <input
+            className="field__input"
+            value={editWebsite}
+            onChange={(e) => setEditWebsite(e.target.value)}
+            placeholder="https://example.com"
+          />
+        </label>
+
+        <div className="buttonRow">
+          <button
+            className="btn"
+            type="button"
+            onClick={() =>
+              onUpdateCompany(company.id, {
+                name: editName,
+                tags: editTags,
+                description: editDescription.trim() ? editDescription : undefined,
+                notes: editNotes.trim() ? editNotes : undefined,
+                website: editWebsite.trim() ? editWebsite : undefined,
+              })
+            }
+          >
+            Save changes
+          </button>
+          <button
+            className="btn btn--danger"
+            type="button"
+            onClick={() => {
+              if (!confirm(`Delete company "${company.name}"?`)) return
+              onDeleteCompany(company.id)
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function ManagePanel({
-  sectors,
-  onSelectNode,
-  onAddSector,
-  onAddIndustry,
+  companies,
+  tags,
+  selectedCompanyId,
+  onSelectCompanyId,
+  onAddTag,
   onAddCompany,
-  onDeleteSector,
-  onDeleteIndustry,
+  onUpdateCompany,
   onDeleteCompany,
 }: ManagePanelProps) {
-  const firstSectorId = sectors.find((s) => !!s.id)?.id ?? ''
+  const selectedCompany = useMemo(
+    () => (selectedCompanyId ? companies.find((c) => c.id === selectedCompanyId) ?? null : null),
+    [companies, selectedCompanyId]
+  )
 
-  const industriesForSelect = useMemo(() => {
-    const map: Record<string, Industry[]> = {}
-    for (const sector of sectors) map[sector.id] = sector.industries
-    return map
-  }, [sectors])
+  const [tagDraft, setTagDraft] = useState('')
 
-  const [newSectorName, setNewSectorName] = useState('')
-  const [sectorIdForNewIndustry, setSectorIdForNewIndustry] = useState(firstSectorId)
-  const [newIndustryName, setNewIndustryName] = useState('')
-
-  const safeSectorIdForNewIndustry =
-    sectorIdForNewIndustry && sectors.some((s) => s.id === sectorIdForNewIndustry)
-      ? sectorIdForNewIndustry
-      : firstSectorId
-
-  const industryOptions = useMemo(() => {
-    if (!safeSectorIdForNewIndustry) return []
-    return industriesForSelect[safeSectorIdForNewIndustry] ?? []
-  }, [industriesForSelect, safeSectorIdForNewIndustry])
-
-  const [industryIdForNewCompany, setIndustryIdForNewCompany] = useState(industryOptions[0]?.id ?? '')
-  const [newCompanyName, setNewCompanyName] = useState('')
-  const [newCompanyNotes, setNewCompanyNotes] = useState('')
-  const [sectorValueForNewCompany, setSectorValueForNewCompany] = useState<SectorValue | ''>(() => {
-    const boardSectorName = sectors.find((s) => s.id === safeSectorIdForNewIndustry)?.name ?? ''
-    return mapBoardSectorNameToSectorValue(boardSectorName) ?? ''
-  })
-  const [industryValueForNewCompany, setIndustryValueForNewCompany] = useState<IndustryValue | ''>(() => {
-    const boardIndustryName = industryOptions[0]?.name ?? ''
-    return mapBoardIndustryNameToIndustryValue(boardIndustryName) ?? ''
-  })
-  const [subIndustryForNewCompany, setSubIndustryForNewCompany] = useState('')
-  const [layerValueForNewCompany, setLayerValueForNewCompany] = useState<LayerValue | ''>('')
-  const [businessModelValueForNewCompany, setBusinessModelValueForNewCompany] = useState<BusinessModelValue | ''>('')
-  const [frontierValuesForNewCompany, setFrontierValuesForNewCompany] = useState<FrontierValue[]>([])
-
-  const safeIndustryIdForNewCompany =
-    industryIdForNewCompany && industryOptions.some((i) => i.id === industryIdForNewCompany)
-      ? industryIdForNewCompany
-      : industryOptions[0]?.id ?? ''
-
- 
-  function selectEntity(info: SelectedEntityInfo) {
-    onSelectNode(info)
-  }
+  const [newName, setNewName] = useState('')
+  const [newTags, setNewTags] = useState<string[]>([])
+  const [newDescription, setNewDescription] = useState('')
+  const [newNotes, setNewNotes] = useState('')
+  const [newWebsite, setNewWebsite] = useState('')
 
   return (
     <div className="sidePanel">
       <div className="sidePanel__header">
         <h2 className="sidePanel__title">Manage data</h2>
-        <p className="sidePanel__subtitle">Add sectors, industries, and companies. Nodes appear automatically.</p>
+        <p className="sidePanel__subtitle">Add companies and assign tags. The board clusters by shared tags.</p>
       </div>
 
       <div className="sidePanel__section">
@@ -100,383 +151,161 @@ export default function ManagePanel({
           className="formCard"
           onSubmit={(e) => {
             e.preventDefault()
-            const trimmed = newSectorName.trim()
-            if (!trimmed) return
-            onAddSector(trimmed)
-            setNewSectorName('')
-          }}
-          noValidate
-        >
-          <div className="formCard__title">Add Sector</div>
-          <label className="field">
-            <span className="field__label">Sector name</span>
-            <input
-              className="field__input"
-              value={newSectorName}
-              onChange={(e) => setNewSectorName(e.target.value)}
-              placeholder="e.g., FinTech"
-              required
-            />
-          </label>
-          <button className="btn" type="submit">
-            Add sector
-          </button>
-        </form>
-      </div>
-
-      <div className="sidePanel__section">
-        <form
-          className="formCard"
-          onSubmit={(e) => {
-            e.preventDefault()
-            const trimmed = newIndustryName.trim()
-            if (!trimmed) return
-            if (!safeSectorIdForNewIndustry) return
-            onAddIndustry(safeSectorIdForNewIndustry, trimmed)
-            setNewIndustryName('')
-          }}
-          noValidate
-        >
-          <div className="formCard__title">Add Industry</div>
-          <label className="field">
-            <span className="field__label">Sector</span>
-            <select
-              className="field__input"
-              value={safeSectorIdForNewIndustry}
-              onChange={(e) => {
-                const nextSectorId = e.target.value
-                setSectorIdForNewIndustry(nextSectorId)
-                const nextSector = sectors.find((s) => s.id === nextSectorId)
-                const nextIndustry = nextSector?.industries[0]
-                setIndustryIdForNewCompany(nextIndustry?.id ?? '')
-                setSectorValueForNewCompany(mapBoardSectorNameToSectorValue(nextSector?.name) ?? '')
-                setIndustryValueForNewCompany(mapBoardIndustryNameToIndustryValue(nextIndustry?.name) ?? '')
-              }}
-              disabled={sectors.length === 0}
-              required
-            >
-              {sectors.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span className="field__label">Industry name</span>
-            <input
-              className="field__input"
-              value={newIndustryName}
-              onChange={(e) => setNewIndustryName(e.target.value)}
-              placeholder="e.g., Payments"
-              required
-            />
-          </label>
-          <button className="btn" type="submit" disabled={sectors.length === 0 || !safeSectorIdForNewIndustry}>
-            Add industry
-          </button>
-        </form>
-      </div>
-
-      <div className="sidePanel__section">
-        <form
-          className="formCard"
-          onSubmit={(e) => {
-            e.preventDefault()
-            const trimmed = newCompanyName.trim()
-            if (!trimmed) return
-            if (!safeIndustryIdForNewCompany) return
-            const taxonomy: CompanyTaxonomy = {
-              sector: sectorValueForNewCompany || undefined,
-              industry: industryValueForNewCompany || undefined,
-              subIndustry: subIndustryForNewCompany.trim() || undefined,
-              layer: layerValueForNewCompany || undefined,
-              businessModel: businessModelValueForNewCompany || undefined,
-              frontier: frontierValuesForNewCompany.length > 0 ? frontierValuesForNewCompany : undefined,
-            }
-            onAddCompany(safeIndustryIdForNewCompany, trimmed, newCompanyNotes.trim(), taxonomy)
-            setNewCompanyName('')
-            setNewCompanyNotes('')
-
-            const boardSectorName = sectors.find((s) => s.id === safeSectorIdForNewIndustry)?.name ?? ''
-            const boardIndustryName = industryOptions.find((i) => i.id === safeIndustryIdForNewCompany)?.name ?? ''
-            setSectorValueForNewCompany(mapBoardSectorNameToSectorValue(boardSectorName) ?? '')
-            setIndustryValueForNewCompany(mapBoardIndustryNameToIndustryValue(boardIndustryName) ?? '')
-
-            setSubIndustryForNewCompany('')
-            setLayerValueForNewCompany('')
-            setBusinessModelValueForNewCompany('')
-            setFrontierValuesForNewCompany([])
+            onAddCompany({
+              name: newName,
+              tags: newTags,
+              description: newDescription.trim() ? newDescription : undefined,
+              notes: newNotes.trim() ? newNotes : undefined,
+              website: newWebsite.trim() ? newWebsite : undefined,
+            })
+            setNewName('')
+            setNewTags([])
+            setNewDescription('')
+            setNewNotes('')
+            setNewWebsite('')
           }}
           noValidate
         >
           <div className="formCard__title">Add Company</div>
-          <label className="field">
-            <span className="field__label">Industry</span>
-            <select
-              className="field__input"
-              value={safeIndustryIdForNewCompany}
-              onChange={(e) => {
-                const nextIndustryId = e.target.value
-                setIndustryIdForNewCompany(nextIndustryId)
 
-                const nextIndustryName = industryOptions.find((i) => i.id === nextIndustryId)?.name ?? ''
-                const boardSectorName = sectors.find((s) => s.id === safeSectorIdForNewIndustry)?.name ?? ''
-
-                setIndustryValueForNewCompany(mapBoardIndustryNameToIndustryValue(nextIndustryName) ?? '')
-                setSectorValueForNewCompany(mapBoardSectorNameToSectorValue(boardSectorName) ?? '')
-              }}
-              disabled={industryOptions.length === 0}
-              required
-            >
-              {industryOptions.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.name}
-                </option>
-              ))}
-            </select>
-          </label>
           <label className="field">
             <span className="field__label">Company name</span>
             <input
               className="field__input"
-              value={newCompanyName}
-              onChange={(e) => setNewCompanyName(e.target.value)}
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
               placeholder="e.g., Stripe"
               required
             />
           </label>
+
           <label className="field">
-            <span className="field__label">Sector (taxonomy)</span>
-            <select
-              className="field__input"
-              value={sectorValueForNewCompany}
-              onChange={(e) => setSectorValueForNewCompany(e.target.value as SectorValue | '')}
-            >
-              <option value="">Unspecified</option>
-              {SECTOR_VALUES.map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
-            {getFieldHelp('sector') ? <div className="field__help">{getFieldHelp('sector')}</div> : null}
-          </label>
-          <label className="field">
-            <span className="field__label">Industry (taxonomy)</span>
-            <select
-              className="field__input"
-              value={industryValueForNewCompany}
-              onChange={(e) => setIndustryValueForNewCompany(e.target.value as IndustryValue | '')}
-            >
-              <option value="">Unspecified</option>
-              {INDUSTRY_VALUES.map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
-            {getFieldHelp('industry') ? <div className="field__help">{getFieldHelp('industry')}</div> : null}
-          </label>
-          <label className="field">
-            <span className="field__label">Sub-industry</span>
-            <input
-              className="field__input"
-              value={subIndustryForNewCompany}
-              onChange={(e) => setSubIndustryForNewCompany(e.target.value)}
-              placeholder="e.g., Foundation models, Fraud detection, Payments infrastructure"
+            <span className="field__label">Tags</span>
+            <TagEditor
+              value={newTags}
+              availableTags={tags}
+              onChange={setNewTags}
+              placeholder="Type tags and press Enter (comma-separated)"
+              suggestionsLabel={`${tags.length} total`}
             />
-            {getFieldHelp('subIndustry') ? <div className="field__help">{getFieldHelp('subIndustry')}</div> : null}
           </label>
+
           <label className="field">
-            <span className="field__label">Layer</span>
-            <select
-              className="field__input"
-              value={layerValueForNewCompany}
-              onChange={(e) => setLayerValueForNewCompany(e.target.value as LayerValue | '')}
-            >
-              <option value="">Unspecified</option>
-              {LAYER_VALUES.map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
-            {getFieldHelp('layer') ? <div className="field__help">{getFieldHelp('layer')}</div> : null}
+            <span className="field__label">Description (optional)</span>
+            <textarea
+              className="field__input field__textarea"
+              value={newDescription}
+              onChange={(e) => setNewDescription(e.target.value)}
+              placeholder="What does it do?"
+              rows={3}
+            />
           </label>
-          <label className="field">
-            <span className="field__label">Business model</span>
-            <select
-              className="field__input"
-              value={businessModelValueForNewCompany}
-              onChange={(e) => setBusinessModelValueForNewCompany(e.target.value as BusinessModelValue | '')}
-            >
-              <option value="">Unspecified</option>
-              {BUSINESS_MODEL_VALUES.map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
-            {getFieldHelp('businessModel') ? (
-              <div className="field__help">{getFieldHelp('businessModel')}</div>
-            ) : null}
-          </label>
-          <label className="field">
-            <span className="field__label">Frontier</span>
-            <select
-              multiple
-              size={6}
-              className="field__input"
-              value={frontierValuesForNewCompany}
-              onChange={(e) => {
-                const selected = Array.from(e.target.selectedOptions).map((o) => o.value) as FrontierValue[]
-                setFrontierValuesForNewCompany(selected)
-              }}
-            >
-              {FRONTIER_VALUES.map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
-            {getFieldHelp('frontier') ? <div className="field__help">{getFieldHelp('frontier')}</div> : null}
-          </label>
+
           <label className="field">
             <span className="field__label">Notes (optional)</span>
             <textarea
               className="field__input field__textarea"
-              value={newCompanyNotes}
-              onChange={(e) => setNewCompanyNotes(e.target.value)}
-              placeholder="What to research?"
+              value={newNotes}
+              onChange={(e) => setNewNotes(e.target.value)}
+              placeholder="Research notes / insights"
               rows={3}
             />
           </label>
-          <button
-            className="btn"
-            type="submit"
-            disabled={industryOptions.length === 0 || !safeIndustryIdForNewCompany}
-          >
+
+          <label className="field">
+            <span className="field__label">Website (optional)</span>
+            <input
+              className="field__input"
+              value={newWebsite}
+              onChange={(e) => setNewWebsite(e.target.value)}
+              placeholder="https://example.com"
+            />
+          </label>
+
+          <button className="btn" type="submit" disabled={!newName.trim()}>
             Add company
           </button>
         </form>
       </div>
 
       <div className="sidePanel__section">
+        <form
+          className="formCard"
+          onSubmit={(e) => {
+            e.preventDefault()
+            onAddTag(tagDraft)
+            setTagDraft('')
+          }}
+          noValidate
+        >
+          <div className="formCard__title">Add Tag</div>
+
+          <label className="field">
+            <span className="field__label">Tag</span>
+            <input
+              className="field__input"
+              value={tagDraft}
+              onChange={(e) => setTagDraft(e.target.value)}
+              placeholder="e.g., Robotics"
+            />
+          </label>
+
+          <button className="btn" type="submit" disabled={!tagDraft.trim()}>
+            Add tag
+          </button>
+        </form>
+      </div>
+
+      {selectedCompany ? (
+        <EditCompanyForm
+          key={selectedCompany.id}
+          company={selectedCompany}
+          tags={tags}
+          onUpdateCompany={onUpdateCompany}
+          onDeleteCompany={onDeleteCompany}
+        />
+      ) : null}
+
+      <div className="sidePanel__section">
         <div className="sidePanel__listHeader">
-          <div className="sidePanel__listTitle">Current board</div>
-          <div className="sidePanel__muted">{sectors.length} sectors</div>
+          <div className="sidePanel__listTitle">Current companies</div>
+          <div className="sidePanel__muted">{companies.length} companies</div>
         </div>
 
-        {sectors.length === 0 ? (
-          <div className="emptyState">No data yet. Add your first sector above.</div>
+        {companies.length === 0 ? (
+          <div className="emptyState">No data yet. Add your first company above.</div>
         ) : (
-          <div className="boardTree">
-            {sectors.map((sector) => (
-              <div key={sector.id} className="treeNode">
-                <div className="treeNode__header">
-                  <button
-                    className="treeNode__link"
-                    type="button"
-                    onClick={() =>
-                      selectEntity({
-                        nodeId: nodeId('sector', sector.id),
-                        kind: 'sector',
-                        sectorId: sector.id,
-                      })
-                    }
-                  >
-                    {sector.name}
-                  </button>
-                  <button
-                    className="treeNode__btn treeNode__btn--danger"
-                    type="button"
-                    onClick={() => {
-                      if (confirm(`Delete sector "${sector.name}" and everything inside it?`)) {
-                        onDeleteSector(sector.id)
-                      }
-                    }}
-                  >
-                    Delete
-                  </button>
-                </div>
-
-                {sector.industries.length === 0 ? (
-                  <div className="treeNode__muted">No industries yet.</div>
-                ) : (
-                  <div className="treeChildren">
-                    {sector.industries.map((industry) => (
-                      <div key={industry.id} className="subNode">
-                        <div className="subNode__header">
-                          <button
-                            className="treeNode__link subNode__link"
-                            type="button"
-                            onClick={() =>
-                              selectEntity({
-                                nodeId: nodeId('industry', industry.id),
-                                kind: 'industry',
-                                sectorId: sector.id,
-                                industryId: industry.id,
-                              })
-                            }
-                          >
-                            {industry.name}
-                          </button>
-                          <button
-                            className="treeNode__btn treeNode__btn--danger"
-                            type="button"
-                            onClick={() => {
-                              if (confirm(`Delete industry "${industry.name}"?`)) {
-                                onDeleteIndustry(industry.id)
-                              }
-                            }}
-                          >
-                            Delete
-                          </button>
-                        </div>
-
-                        {industry.companies.length === 0 ? (
-                          <div className="subNode__muted">No companies yet.</div>
-                        ) : (
-                          <div className="companiesList">
-                            {industry.companies.map((company) => (
-                              <div key={company.id} className="companyRow">
-                                <button
-                                  className="companyRow__name"
-                                  type="button"
-                                  onClick={() =>
-                                    selectEntity({
-                                      nodeId: nodeId('company', company.id),
-                                      kind: 'company',
-                                      sectorId: sector.id,
-                                      industryId: industry.id,
-                                      companyId: company.id,
-                                    })
-                                  }
-                                >
-                                  {company.name}
-                                </button>
-                                <button
-                                  className="companyRow__del"
-                                  type="button"
-                                  onClick={() => {
-                                    if (confirm(`Delete company "${company.name}"?`)) {
-                                      onDeleteCompany(company.id)
-                                    }
-                                  }}
-                                >
-                                  X
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
+          <div className="companiesList">
+            {companies
+              .slice()
+              .sort((a, b) => b.createdAt - a.createdAt)
+              .map((c) => {
+                const isActive = c.id === selectedCompanyId
+                const tagPreview = (c.tags ?? []).slice(0, 3)
+                const meta = tagPreview.length > 0 ? tagPreview.join(', ') : c.description ? c.description : c.notes
+                return (
+                  <div key={c.id} className="companyRow">
+                    <button
+                      className={`companyRow__name ${isActive ? 'companyRow__name--active' : ''}`}
+                      type="button"
+                      onClick={() => onSelectCompanyId(c.id)}
+                      title={c.name}
+                    >
+                      {c.name}
+                    </button>
+                    <button
+                      className="companyRow__del"
+                      type="button"
+                      onClick={() => {
+                        onSelectCompanyId(c.id)
+                      }}
+                      title={meta ? String(meta) : 'Edit'}
+                    >
+                      Edit
+                    </button>
                   </div>
-                )}
-              </div>
-            ))}
+                )
+              })}
           </div>
         )}
       </div>

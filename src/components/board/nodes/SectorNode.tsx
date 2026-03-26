@@ -1,6 +1,7 @@
 import type { NodeProps } from 'reactflow'
 import { Handle, Position } from 'reactflow'
 import type { BoardNodeData } from '../../../lib/boardGraph'
+import type { NodeId } from '../../../lib/types'
 import { useBoardSelection } from '../BoardSelectionContext'
 
 export default function SectorNode({ id, data }: NodeProps<BoardNodeData>) {
@@ -13,7 +14,7 @@ export default function SectorNode({ id, data }: NodeProps<BoardNodeData>) {
       style={{ width: data.width, height: data.height }}
       onClick={(e) => {
         e.stopPropagation()
-        onSelect({ nodeId: id, kind: 'sector', sectorId: data.sectorId })
+        onSelect({ nodeId: id as NodeId, kind: 'sector', sectorId: data.sectorId })
       }}
       role="button"
       aria-label={`Sector: ${data.label}`}

@@ -1,17 +1,17 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext } from 'react'
-import type { NodeKind } from '../../lib/types'
+import type { NodeId, NodeKind } from '../../lib/types'
 
 export type SelectedEntityInfo = {
-  nodeId: string
+  nodeId: NodeId
   kind: NodeKind
-  sectorId: string
+  sectorId?: string
   industryId?: string
   companyId?: string
 }
 
 type BoardSelectionContextValue = {
-  selectedNodeId: string | null
+  selectedNodeId: NodeId | null
   onSelect: (info: SelectedEntityInfo) => void
 }
 

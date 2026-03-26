@@ -3,9 +3,8 @@ import ReactFlow, { Background, Controls, MiniMap } from 'reactflow'
 import type { ReactFlowInstance } from 'reactflow'
 import type { Edge, Node } from 'reactflow'
 import type { BoardNodeData } from '../../lib/boardGraph'
+import type { NodeId } from '../../lib/types'
 import BoardSelectionContext, { type SelectedEntityInfo } from './BoardSelectionContext'
-import SectorNode from './nodes/SectorNode'
-import IndustryNode from './nodes/IndustryNode'
 import CompanyNode from './nodes/CompanyNode'
 
 import { BackgroundVariant } from '@reactflow/background'
@@ -15,7 +14,7 @@ import './Whiteboard.css'
 export type WhiteboardProps = {
   nodes: Node<BoardNodeData>[]
   edges: Edge[]
-  selectedNodeId: string | null
+  selectedNodeId: NodeId | null
   autoFocusOnSelect: boolean
   onSelectNode: (info: SelectedEntityInfo) => void
   onClearSelection: () => void
@@ -38,8 +37,6 @@ export default function Whiteboard({
 
   const nodeTypes = useMemo(
     () => ({
-      sector: SectorNode,
-      industry: IndustryNode,
       company: CompanyNode,
     }),
     []
@@ -93,11 +90,7 @@ export default function Whiteboard({
           }}
         >
           <Background gap={26} size={1} variant={BackgroundVariant.Dots} />
-          <MiniMap nodeColor={(n) => {
-            if (n.type === 'sector') return 'rgb(170 59 255)'
-            if (n.type === 'industry') return 'rgb(96 165 250)'
-            return 'rgb(34 197 94)'
-          }} />
+          <MiniMap nodeColor={() => 'rgb(34 197 94)'} />
           <Controls showInteractive={false} />
         </ReactFlow>
 

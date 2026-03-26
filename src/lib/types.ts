@@ -8,34 +8,19 @@ export type Id = string
 export type Company = {
   id: Id
   name: string
-  notes: string
-  // Controlled taxonomy fields (used for consistent tagging and filtering).
-  sector?: import('./taxonomy').SectorValue
-  industry?: import('./taxonomy').IndustryValue
-  subIndustry?: string
-  layer?: import('./taxonomy').LayerValue
-  businessModel?: import('./taxonomy').BusinessModelValue
-  frontier?: import('./taxonomy').FrontierValue[]
-  createdAt: number
-}
-
-export type Industry = {
-  id: Id
-  name: string
-  companies: Company[]
-  createdAt: number
-}
-
-export type Sector = {
-  id: Id
-  name: string
-  industries: Industry[]
+  // Main classification system: multi-value tags (Notion/Obsidian style).
+  tags: string[]
+  description?: string
+  notes?: string
+  website?: string
   createdAt: number
 }
 
 export type BoardData = {
-  version: 2
-  sectors: Sector[]
+  version: 3
+  companies: Company[]
+  // Global tag library (used for quick filtering + tag suggestions).
+  tags: string[]
   layout: LayoutMap
 }
 

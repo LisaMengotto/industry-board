@@ -1,6 +1,7 @@
 import type { NodeProps } from 'reactflow'
 import { Handle, Position } from 'reactflow'
 import type { BoardNodeData } from '../../../lib/boardGraph'
+import type { NodeId } from '../../../lib/types'
 import { useBoardSelection } from '../BoardSelectionContext'
 
 export default function IndustryNode({ id, data }: NodeProps<BoardNodeData>) {
@@ -14,7 +15,7 @@ export default function IndustryNode({ id, data }: NodeProps<BoardNodeData>) {
       onClick={(e) => {
         e.stopPropagation()
         onSelect({
-          nodeId: id,
+          nodeId: id as NodeId,
           kind: 'industry',
           sectorId: data.sectorId,
           industryId: data.industryId,

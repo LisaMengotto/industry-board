@@ -1,73 +1,36 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { BoardData, Company, Industry, Sector } from './lib/types'
+import type { BoardData, Company, NodeId } from './lib/types'
 import { loadBoardData, saveBoardData, clearBoardData } from './lib/storage'
 import { newId } from './lib/uid'
-import { buildBoardGraph, ensureLayoutForSectors } from './lib/boardGraph'
+import { buildBoardGraph, ensureLayoutForCompanies } from './lib/boardGraph'
 import { nodeId } from './lib/types'
-import type { CompanyTaxonomy } from './lib/taxonomy'
 import type { SelectedEntityInfo } from './components/board/BoardSelectionContext'
 import Whiteboard from './components/board/Whiteboard'
 import ManagePanel from './components/board/ManagePanel'
-import BrowsePanel, { type BrowseStep } from './components/board/BrowsePanel'
+import BrowsePanel from './components/board/BrowsePanel'
 
 import './App.css'
 
-type Mode = 'manage' | 'browse'
+type Mode = 'manage' | 'explore'
 
 function ensureLayoutState(data: BoardData): BoardData {
-  const { layout, didChange } = ensureLayoutForSectors(data.sectors, data.layout)
+  const { layout, didChange } = ensureLayoutForCompanies(data.companies, data.layout)
   return didChange ? { ...data, layout } : data
 }
 
-function findIndustryParent(
-  sectors: Sector[],
-  industryId: string
-): { sectorId: string; industry: Industry } | null {
-  for (const sector of sectors) {
-    const found = sector.industries.find((i) => i.id === industryId)
-    if (found) return { sectorId: sector.id, industry: found }
-  }
-  return null
-}
-
-function findCompanyParent(
-  sectors: Sector[],
-  companyId: string
-): { sectorId: string; industryId: string; company: Company } | null {
-  for (const sector of sectors) {
-    for (const industry of sector.industries) {
-      const found = industry.companies.find((c) => c.id === companyId)
-      if (found) return { sectorId: sector.id, industryId: industry.id, company: found }
-    }
-  }
-  return null
-}
-
-function allNodeIds(sectors: Sector[]) {
-  const ids = new Set<string>()
-  for (const sector of sectors) {
-    ids.add(nodeId('sector', sector.id))
-    for (const industry of sector.industries) {
-      ids.add(nodeId('industry', industry.id))
-      for (const company of industry.companies) ids.add(nodeId('company', company.id))
-    }
-  }
-  return ids
-}
-
 export default function App() {
-  const [mode, setMode] = useState<Mode>('browse')
+  const [mode, setMode] = useState<Mode>('manage')
   const [boardData, setBoardData] = useState<BoardData>(() => ensureLayoutState(loadBoardData()))
 
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
-  const [browseStep, setBrowseStep] = useState<BrowseStep>(0)
+  const [selectedNodeId, setSelectedNodeId] = useState<NodeId | null>(null)
 
   const [autoFocusOnSelect, setAutoFocusOnSelect] = useState(true)
-  const [selectedSectorId, setSelectedSectorId] = useState<string | null>(null)
-  const [selectedIndustryId, setSelectedIndustryId] = useState<string | null>(null)
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null)
 
-  const expectedNodeIds = useMemo(() => allNodeIds(boardData.sectors), [boardData.sectors])
+  const expectedNodeIds = useMemo(
+    () => new Set(boardData.companies.map((c) => nodeId('company', c.id))),
+    [boardData.companies]
+  )
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -78,138 +41,136 @@ export default function App() {
 
   const safeSelectedNodeId = selectedNodeId && expectedNodeIds.has(selectedNodeId) ? selectedNodeId : null
 
+  function normalizeTagKey(tag: string) {
+    return tag.trim().toLowerCase().replace(/\s+/g, ' ')
+  }
+
+  function dedupeTags(tags: string[]) {
+    const out: string[] = []
+    const seen = new Set<string>()
+    for (const t of tags) {
+      const tag = t.trim()
+      if (!tag) continue
+      const key = normalizeTagKey(tag)
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push(tag)
+    }
+    return out
+  }
+
+  function mergeTagLibraries(existing: string[], incoming: string[]) {
+    const out = [...existing]
+    const seen = new Set(existing.map((t) => normalizeTagKey(t)))
+    for (const t of incoming) {
+      const tag = t.trim()
+      if (!tag) continue
+      const key = normalizeTagKey(tag)
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push(tag)
+    }
+    return out
+  }
+
+  function selectCompany(companyIdToSelect: string | null) {
+    setSelectedCompanyId(companyIdToSelect)
+    setSelectedNodeId(companyIdToSelect ? nodeId('company', companyIdToSelect) : null)
+  }
+
   function handleSelectNode(info: SelectedEntityInfo) {
+    if (info.kind === 'company') {
+      selectCompany(info.companyId ?? null)
+      return
+    }
+    // Keep selection logic company-only for now.
     setSelectedNodeId(info.nodeId)
-
-    if (info.kind === 'sector') {
-      setBrowseStep(0)
-      setSelectedSectorId(info.sectorId)
-      setSelectedIndustryId(null)
-      setSelectedCompanyId(null)
-      return
-    }
-
-    if (info.kind === 'industry') {
-      setBrowseStep(1)
-      setSelectedSectorId(info.sectorId)
-      setSelectedIndustryId(info.industryId ?? null)
-      setSelectedCompanyId(null)
-      return
-    }
-
-    setBrowseStep(2)
-    setSelectedSectorId(info.sectorId)
-    setSelectedIndustryId(info.industryId ?? null)
-    setSelectedCompanyId(info.companyId ?? null)
-  }
-
-  function selectSectorInBrowse(sectorIdToSelect: string) {
-    setSelectedSectorId(sectorIdToSelect)
-    const sector = boardData.sectors.find((s) => s.id === sectorIdToSelect) ?? null
-    setSelectedIndustryId(sector?.industries[0]?.id ?? null)
-    setSelectedCompanyId(sector?.industries[0]?.companies[0]?.id ?? null)
-    setSelectedNodeId(nodeId('sector', sectorIdToSelect))
-  }
-
-  function selectIndustryInBrowse(industryIdToSelect: string) {
-    const parent = findIndustryParent(boardData.sectors, industryIdToSelect)
-    if (!parent) return
-
-    setSelectedSectorId(parent.sectorId)
-    setSelectedIndustryId(parent.industry.id)
-    setSelectedCompanyId(parent.industry.companies[0]?.id ?? null)
-    setSelectedNodeId(nodeId('industry', parent.industry.id))
-  }
-
-  function selectCompanyInBrowse(companyIdToSelect: string) {
-    const parent = findCompanyParent(boardData.sectors, companyIdToSelect)
-    if (!parent) return
-
-    setSelectedSectorId(parent.sectorId)
-    setSelectedIndustryId(parent.industryId)
-    setSelectedCompanyId(parent.company.id)
-    setSelectedNodeId(nodeId('company', parent.company.id))
+    setSelectedCompanyId(null)
   }
 
   function handleClearSelection() {
-    setSelectedNodeId(null)
+    selectCompany(null)
   }
 
-  function addSector(name: string) {
-    const sector: Sector = { id: newId(), name, industries: [], createdAt: Date.now() }
-    setBoardData((prev) => ensureLayoutState({ ...prev, sectors: [...prev.sectors, sector] }))
+  type AddCompanyInput = {
+    name: string
+    tags: string[]
+    description?: string
+    notes?: string
+    website?: string
   }
 
-  function addIndustry(sectorIdValue: string, name: string) {
-    const industry: Industry = { id: newId(), name, companies: [], createdAt: Date.now() }
-    setBoardData((prev) =>
-      ensureLayoutState({
-        ...prev,
-        sectors: prev.sectors.map((s) =>
-          s.id === sectorIdValue ? { ...s, industries: [...s.industries, industry] } : s
-        ),
-      })
-    )
+  type UpdateCompanyInput = {
+    name?: string
+    tags?: string[]
+    description?: string
+    notes?: string
+    website?: string
   }
 
-  function addCompany(industryIdValue: string, name: string, notes: string, taxonomy: CompanyTaxonomy) {
-    const company: Company = { id: newId(), name, notes, createdAt: Date.now(), ...taxonomy }
-    setBoardData((prev) =>
-      ensureLayoutState({
-        ...prev,
-        sectors: prev.sectors.map((s) => ({
-          ...s,
-          industries: s.industries.map((i) =>
-            i.id === industryIdValue ? { ...i, companies: [...i.companies, company] } : i
-          ),
-        })),
-      })
-    )
+  function addTag(tag: string) {
+    const trimmed = tag.trim()
+    if (!trimmed) return
+    setBoardData((prev) => ({ ...prev, tags: mergeTagLibraries(prev.tags, [trimmed]) }))
   }
 
-  function deleteSector(sectorIdValue: string) {
-    setBoardData((prev) => ensureLayoutState({ ...prev, sectors: prev.sectors.filter((s) => s.id !== sectorIdValue) }))
-    if (selectedSectorId === sectorIdValue) {
-      setSelectedSectorId(null)
-      setSelectedIndustryId(null)
-      setSelectedCompanyId(null)
-      setSelectedNodeId(null)
+  function addCompany(input: AddCompanyInput) {
+    const trimmedName = input.name.trim()
+    if (!trimmedName) return
+
+    const nextTags = dedupeTags(input.tags ?? [])
+
+    const company: Company = {
+      id: newId(),
+      name: trimmedName,
+      tags: nextTags,
+      description: input.description?.trim() ? input.description.trim() : undefined,
+      notes: input.notes?.trim() ? input.notes.trim() : undefined,
+      website: input.website?.trim() ? input.website.trim() : undefined,
+      createdAt: Date.now(),
     }
-  }
 
-  function deleteIndustry(industryIdValue: string) {
     setBoardData((prev) =>
       ensureLayoutState({
         ...prev,
-        sectors: prev.sectors.map((s) => ({
-          ...s,
-          industries: s.industries.filter((i) => i.id !== industryIdValue),
-        })),
+        companies: [...prev.companies, company],
+        tags: mergeTagLibraries(prev.tags, nextTags),
       })
     )
-    if (selectedIndustryId === industryIdValue) {
-      setSelectedIndustryId(null)
-      setSelectedCompanyId(null)
-      setSelectedNodeId(null)
-    }
+    selectCompany(company.id)
+  }
+
+  function updateCompany(companyIdValue: string, patch: UpdateCompanyInput) {
+    setBoardData((prev) => {
+      const idx = prev.companies.findIndex((c) => c.id === companyIdValue)
+      if (idx === -1) return prev
+      const current = prev.companies[idx]!
+
+      const nextTags = patch.tags ? dedupeTags(patch.tags) : current.tags
+      const nextCompany: Company = {
+        ...current,
+        name: patch.name ? patch.name.trim() : current.name,
+        tags: nextTags,
+        description: patch.description !== undefined ? (patch.description.trim() ? patch.description.trim() : undefined) : current.description,
+        notes: patch.notes !== undefined ? (patch.notes.trim() ? patch.notes.trim() : undefined) : current.notes,
+        website: patch.website !== undefined ? (patch.website.trim() ? patch.website.trim() : undefined) : current.website,
+      }
+
+      const nextTagsLibrary = mergeTagLibraries(prev.tags, nextTags)
+      const nextCompanies = prev.companies.map((c) => (c.id === companyIdValue ? nextCompany : c))
+      return ensureLayoutState({ ...prev, companies: nextCompanies, tags: nextTagsLibrary })
+    })
   }
 
   function deleteCompany(companyIdValue: string) {
     setBoardData((prev) =>
       ensureLayoutState({
         ...prev,
-        sectors: prev.sectors.map((s) => ({
-          ...s,
-          industries: s.industries.map((i) => ({
-            ...i,
-            companies: i.companies.filter((c) => c.id !== companyIdValue),
-          })),
-        })),
+        companies: prev.companies.filter((c) => c.id !== companyIdValue),
       })
     )
     if (selectedCompanyId === companyIdValue) {
-      setSelectedCompanyId(null)
-      setSelectedNodeId(null)
+      selectCompany(null)
     }
   }
 
@@ -234,8 +195,8 @@ export default function App() {
   }
 
   const { nodes, edges } = useMemo(
-    () => buildBoardGraph(boardData.sectors, boardData.layout),
-    [boardData.sectors, boardData.layout]
+    () => buildBoardGraph(boardData.companies, boardData.layout),
+    [boardData.companies, boardData.layout]
   )
 
   return (
@@ -244,7 +205,7 @@ export default function App() {
         <div className="sidebarTop">
           <div className="brand">
             <div className="brand__name">Industry research board</div>
-            <div className="brand__meta">Sectors to industries to companies</div>
+            <div className="brand__meta">Tags-first company graph</div>
           </div>
 
           <div className="modeSwitch" role="tablist" aria-label="Board mode">
@@ -257,10 +218,10 @@ export default function App() {
             </button>
             <button
               type="button"
-              className={`modeSwitch__btn ${mode === 'browse' ? 'modeSwitch__btn--active' : ''}`}
-              onClick={() => setMode('browse')}
+              className={`modeSwitch__btn ${mode === 'explore' ? 'modeSwitch__btn--active' : ''}`}
+              onClick={() => setMode('explore')}
             >
-              Guided browse
+              Explore tags
             </button>
           </div>
         </div>
@@ -268,46 +229,36 @@ export default function App() {
         <div className="sidebarBody">
           {mode === 'manage' ? (
             <ManagePanel
-              sectors={boardData.sectors}
-              onSelectNode={(info) => {
-                handleSelectNode(info)
-              }}
-              onAddSector={addSector}
-              onAddIndustry={addIndustry}
+              companies={boardData.companies}
+              tags={boardData.tags}
+              selectedCompanyId={selectedCompanyId}
+              onSelectCompanyId={(id) => selectCompany(id)}
+              onAddTag={addTag}
               onAddCompany={addCompany}
-              onDeleteSector={deleteSector}
-              onDeleteIndustry={deleteIndustry}
+              onUpdateCompany={updateCompany}
               onDeleteCompany={deleteCompany}
             />
           ) : (
             <BrowsePanel
-              sectors={boardData.sectors}
-              browseStep={browseStep}
-              selectedSectorId={selectedSectorId}
-              selectedIndustryId={selectedIndustryId}
               selectedCompanyId={selectedCompanyId}
+              companies={boardData.companies}
+              tags={boardData.tags}
               autoFocusOnSelect={autoFocusOnSelect}
               onSetAutoFocusOnSelect={setAutoFocusOnSelect}
-              onSelectSectorId={(id) => {
-                setBrowseStep(0)
-                selectSectorInBrowse(id)
-              }}
-              onSelectIndustryId={(id) => {
-                setBrowseStep(1)
-                selectIndustryInBrowse(id)
-              }}
-              onSelectCompanyId={(id) => {
-                setBrowseStep(2)
-                selectCompanyInBrowse(id)
-              }}
-              onSetBrowseStep={(step) => setBrowseStep(step)}
+              onSelectCompanyId={(id) => selectCompany(id)}
             />
           )}
         </div>
 
         <div className="sidebarFooter">
           <div className="sidebarFooter__hint">
-            {safeSelectedNodeId ? `Selected node: ${safeSelectedNodeId}` : 'Click nodes on the board to focus them.'}
+            {selectedCompanyId ? (
+              <>
+                Selected company: {boardData.companies.find((c) => c.id === selectedCompanyId)?.name ?? selectedCompanyId}
+              </>
+            ) : (
+              'Click company nodes to focus them.'
+            )}
           </div>
           <button className="btn btn--danger btn--full" type="button" onClick={handleResetBoard}>
             Reset board data
